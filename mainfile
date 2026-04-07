@@ -1,0 +1,206 @@
+import sounddevice as sd
+from scipy.io.wavfile import write
+import openai
+import tempfile
+import google.generativeai as genai
+from langdetect import detect
+import webrtcvad
+import os
+import json
+
+# -----------------------------
+# CONFIG
+# -----------------------------
+openai.api_key = "YOUR_OPENAI_API_KEY"
+genai.configure(api_key="YOUR_GOOGLE_API_KEY")
+
+SAMPLE_RATE = 16000
+FRAME_DURATION = 30
+VAD_MODE = 1
+MEMORY_FILE = "memory.json"
+
+# -----------------------------
+# EXHIBIT DATABASE (CUSTOMIZE THIS!)
+# -----------------------------
+EXHIBITS = {
+    "robot arm": "This robotic arm demonstrates industrial automation used in factories.",
+    "ai robot": "This robot uses artificial intelligence to interact with humans.",
+    "mars rover": "This rover is based on robots used to explore Mars.",
+    "drone": "Drones like this are used for delivery, filming, and research.",
+}
+
+# -----------------------------
+# LOAD / SAVE MEMORY
+# -----------------------------
+def load_memory():
+    if os.path.exists(MEMORY_FILE):
+        with open(MEMORY_FILE, "r") as f:
+            return json.load(f)
+    return []
+
+def save_memory(history):
+    with open(MEMORY_FILE, "w") as f:
+        json.dump(history, f)
+
+history_data = load_memory()
+
+# -----------------------------
+# GEMINI SETUP (WITH PERSONALITY)
+# -----------------------------
+model = genai.GenerativeModel("gemini-1.5-flash")
+
+chat = model.start_chat(history=history_data + [
+    {
+        "role": "user",
+        "parts": ["""
+You are an enthusiastic museum tour guide in a robotics and science museum.
+
+RULES:
+- Only talk about museum exhibits
+- Be engaging and tell short stories
+- Ask follow-up questions sometimes
+- Adapt to the visitor's language
+- Use simple explanations for kids if needed
+"""]
+    }
+])
+
+# -----------------------------
+# SMART LISTENING (VAD)
+# -----------------------------
+vad = webrtcvad.Vad(VAD_MODE)
+
+def record_until_silence():
+    print("\n🎤 Listening...")
+    frames = []
+    silence = 0
+    max_silence = 20
+
+    stream = sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype='int16')
+    stream.start()
+
+    try:
+        while True:
+            frame, _ = stream.read(int(SAMPLE_RATE * FRAME_DURATION / 1000))
+            frame_bytes = frame.tobytes()
+
+            if vad.is_speech(frame_bytes, SAMPLE_RATE):
+                frames.append(frame)
+                silence = 0
+            else:
+                silence += 1
+
+            if silence > max_silence and len(frames) > 0:
+                break
+    finally:
+        stream.stop()
+        stream.close()
+
+    temp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    write(temp.name, SAMPLE_RATE, b"".join(frames))
+    return temp.name
+
+# -----------------------------
+# SPEECH TO TEXT (Whisper)
+# -----------------------------
+def speech_to_text(audio_file):
+    with open(audio_file, "rb") as f:
+        result = openai.audio.transcriptions.create(
+            model="gpt-4o-mini-transcribe",
+            file=f
+        )
+    return result.text.strip()
+
+# -----------------------------
+# DETECT LANGUAGE
+# -----------------------------
+def detect_language(text):
+    try:
+        return detect(text)
+    except:
+        return "en"
+
+# -----------------------------
+# MATCH EXHIBIT
+# -----------------------------
+def find_exhibit(text):
+    for key, value in EXHIBITS.items():
+        if key in text.lower():
+            return value
+    return None
+
+# -----------------------------
+# GEMINI RESPONSE (WITH MEMORY)
+# -----------------------------
+def get_ai_response(user_text, lang):
+    exhibit_info = find_exhibit(user_text)
+
+    if exhibit_info:
+        user_text += f"\nContext about exhibit: {exhibit_info}"
+
+    prompt = f"""
+Visitor language: {lang}
+Respond in the SAME language.
+
+Visitor: {user_text}
+Guide:
+"""
+
+    response = chat.send_message(prompt)
+
+    # Save memory
+    history_data.append({"role": "user", "parts": [user_text]})
+    history_data.append({"role": "model", "parts": [response.text]})
+    save_memory(history_data)
+
+    return response.text
+
+# -----------------------------
+# OPENAI TTS (REALISTIC VOICE)
+# -----------------------------
+def speak(text):
+    temp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+
+    with openai.audio.speech.with_streaming_response.create(
+        model="gpt-4o-mini-tts",
+        voice="alloy",
+        input=text
+    ) as response:
+        response.stream_to_file(temp.name)
+
+    os.system(f"aplay {temp.name}")
+
+# -----------------------------
+# MAIN LOOP
+# -----------------------------
+def main():
+    print("🤖 Advanced Museum AI Guide Ready!\n")
+
+    while True:
+        try:
+            audio_file = record_until_silence()
+
+            user_text = speech_to_text(audio_file)
+            print("🧑 Visitor:", user_text)
+
+            if user_text.lower() in ["exit", "quit", "stop"]:
+                speak("Goodbye! Enjoy the museum.")
+                break
+
+            lang = detect_language(user_text)
+
+            ai_response = get_ai_response(user_text, lang)
+            print("🤖 Guide:", ai_response)
+
+            speak(ai_response)
+
+        except KeyboardInterrupt:
+            print("\nStopping...")
+            break
+
+        except Exception as e:
+            print("Error:", e)
+            speak("Sorry, something went wrong.")
+
+if __name__ == "__main__":
+    main()
