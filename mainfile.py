@@ -9,6 +9,32 @@ import tempfile
 import os
 import json
 import time
+from pathlib import Path
+
+
+def load_env_file(env_path=".env"):
+    """Load KEY=VALUE lines from .env into os.environ if not already set."""
+    path = Path(env_path)
+    if not path.is_absolute():
+        path = Path(__file__).resolve().parent / path
+
+    if not path.exists():
+        return
+
+    with open(path, "r", encoding="utf-8") as f:
+        for raw_line in f:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
+load_env_file()
 
 # -----------------------------
 # CONFIG
@@ -23,16 +49,26 @@ SAMPLE_RATE = 16000
 RECORD_SECONDS = 4
 MEMORY_FILE = "memory.json"
 
+ENABLE_CAMERA_DETECTION = False
+ENABLE_PAINTING_INTRO = False
+ENABLE_VOICE_INPUT = True
+ENABLE_VOICE_OUTPUT = True
+ENABLE_MEMORY = False
+
 # -----------------------------
 # LOAD / SAVE MEMORY
 # -----------------------------
 def load_memory():
+    if not ENABLE_MEMORY:
+        return []
     if os.path.exists(MEMORY_FILE):
         with open(MEMORY_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     return []
 
 def save_memory(history):
+    if not ENABLE_MEMORY:
+        return
     with open(MEMORY_FILE, "w", encoding="utf-8") as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
 
@@ -153,6 +189,8 @@ def map_to_painting(color, shape):
 # -----------------------------
 def build_history_text():
     parts = [SYSTEM_PROMPT]
+    if not ENABLE_MEMORY:
+        return "\n".join(parts)
     for item in history_data[-10:]:
         role = item.get("role", "user")
         text = item.get("text", "")
@@ -176,15 +214,19 @@ Guide:
     )
 
     answer = response.text if response.text else "Sorry, I could not answer that."
-    history_data.append({"role": "user", "text": user_text})
-    history_data.append({"role": "model", "text": answer})
-    save_memory(history_data)
+    if ENABLE_MEMORY:
+        history_data.append({"role": "user", "text": user_text})
+        history_data.append({"role": "model", "text": answer})
+        save_memory(history_data)
     return answer
 
 # -----------------------------
 # OPENAI TTS
 # -----------------------------
 def speak(text):
+    if not ENABLE_VOICE_OUTPUT:
+        return
+
     temp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
     with client.audio.speech.with_streaming_response.create(
         model="gpt-4o-mini-tts",
@@ -203,29 +245,37 @@ def main():
 
     while True:
         try:
-            # Step 1: Capture painting
-            image = capture_image()
-            if image is None:
-                print("Failed to capture image, retrying...")
-                time.sleep(1)
-                continue
+            if ENABLE_CAMERA_DETECTION:
+                # Step 1: Capture painting
+                image = capture_image()
+                if image is None:
+                    print("Failed to capture image, retrying...")
+                    time.sleep(1)
+                    continue
 
-            color = detect_dominant_color(image)
-            shape = detect_shape(image)
-            painting_title = map_to_painting(color, shape)
-            print(f"Detected Painting: {painting_title}")
+                color = detect_dominant_color(image)
+                shape = detect_shape(image)
+                painting_title = map_to_painting(color, shape)
+                print(f"Detected Painting: {painting_title}")
+            else:
+                painting_title = "the current exhibit"
 
-            # Step 2: Explain painting
-            explanation = get_ai_response(
-                f"Visitor is looking at {painting_title}. Explain briefly and ask if they want to know more.",
-                "en"
-            )
-            print("🤖 Guide:", explanation)
-            speak(explanation)
+            if ENABLE_PAINTING_INTRO:
+                # Step 2: Explain painting
+                explanation = get_ai_response(
+                    f"Visitor is looking at {painting_title}. Explain briefly and ask if they want to know more.",
+                    "en"
+                )
+                print("🤖 Guide:", explanation)
+                speak(explanation)
 
             # Step 3: Listen to visitor
-            audio_file = record_audio_fixed()
-            visitor_text = speech_to_text(audio_file)
+            if ENABLE_VOICE_INPUT:
+                audio_file = record_audio_fixed()
+                visitor_text = speech_to_text(audio_file)
+            else:
+                visitor_text = input("🧑 Visitor (type your message): ").strip()
+
             print("🧑 Visitor:", visitor_text)
 
             if visitor_text.lower() in ["exit", "quit", "stop"]:
