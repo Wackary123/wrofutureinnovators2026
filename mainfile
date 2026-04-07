@@ -2,11 +2,10 @@ import cv2
 import numpy as np
 import sounddevice as sd
 from scipy.io.wavfile import write
-import openai
-import tempfile
-import google.generativeai as genai
+from openai import OpenAI
+from google import genai
 from langdetect import detect
-import webrtcvad
+import tempfile
 import os
 import json
 import time
@@ -14,12 +13,14 @@ import time
 # -----------------------------
 # CONFIG
 # -----------------------------
-openai.api_key = "YOUR_OPENAI_API_KEY"
-genai.configure(api_key="YOUR_GOOGLE_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "YOUR_OPENAI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "YOUR_GOOGLE_API_KEY")
+
+client = OpenAI(api_key=OPENAI_API_KEY)
+gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
 SAMPLE_RATE = 16000
-FRAME_DURATION = 30
-VAD_MODE = 1
+RECORD_SECONDS = 4
 MEMORY_FILE = "memory.json"
 
 # -----------------------------
@@ -27,24 +28,20 @@ MEMORY_FILE = "memory.json"
 # -----------------------------
 def load_memory():
     if os.path.exists(MEMORY_FILE):
-        with open(MEMORY_FILE, "r") as f:
+        with open(MEMORY_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     return []
 
 def save_memory(history):
-    with open(MEMORY_FILE, "w") as f:
-        json.dump(history, f)
+    with open(MEMORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(history, f, ensure_ascii=False, indent=2)
 
 history_data = load_memory()
 
 # -----------------------------
-# GEMINI SETUP
+# GEMINI SYSTEM PROMPT
 # -----------------------------
-model = genai.GenerativeModel("gemini-1.5-flash")
-chat = model.start_chat(history=history_data + [
-    {
-        "role": "user",
-        "parts": ["""
+SYSTEM_PROMPT = """
 You are an enthusiastic museum tour guide in a robotics and science museum.
 RULES:
 - Only talk about museum exhibits and paintings
@@ -52,48 +49,31 @@ RULES:
 - Ask follow-up questions sometimes
 - Adapt to visitor's language
 - Use simple explanations for kids if needed
-"""]
-    }
-])
+"""
 
 # -----------------------------
-# SMART LISTENING (VAD)
+# RECORD AUDIO (NO WEBRTCVAD)
 # -----------------------------
-vad = webrtcvad.Vad(VAD_MODE)
-
-def record_until_silence():
+def record_audio_fixed():
     print("\n🎤 Listening...")
-    frames = []
-    silence = 0
-    max_silence = 20
-
-    stream = sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype='int16')
-    stream.start()
-
-    try:
-        while True:
-            frame, _ = stream.read(int(SAMPLE_RATE * FRAME_DURATION / 1000))
-            frame_bytes = frame.tobytes()
-
-            if vad.is_speech(frame_bytes, SAMPLE_RATE):
-                frames.append(frame)
-                silence = 0
-            else:
-                silence += 1
-
-            if silence > max_silence and len(frames) > 0:
-                break
-    finally:
-        stream.stop()
-        stream.close()
+    audio = sd.rec(
+        int(RECORD_SECONDS * SAMPLE_RATE),
+        samplerate=SAMPLE_RATE,
+        channels=1,
+        dtype="int16"
+    )
+    sd.wait()
 
     temp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-    write(temp.name, SAMPLE_RATE, b"".join(frames))
+    write(temp.name, SAMPLE_RATE, audio)
     return temp.name
 
+# -----------------------------
+# SPEECH TO TEXT
+# -----------------------------
 def speech_to_text(audio_file):
     with open(audio_file, "rb") as f:
-        result = openai.audio.transcriptions.create(
+        result = client.audio.transcriptions.create(
             model="gpt-4o-mini-transcribe",
             file=f
         )
@@ -102,7 +82,7 @@ def speech_to_text(audio_file):
 def detect_language(text):
     try:
         return detect(text)
-    except:
+    except Exception:
         return "en"
 
 # -----------------------------
@@ -129,6 +109,7 @@ def detect_dominant_color(image):
     pixels = img.reshape((-1, 3))
     avg_color = np.mean(pixels, axis=0)
     r, g, b = avg_color
+
     if r > g and r > b:
         return "red"
     elif g > r and g > b:
@@ -141,14 +122,20 @@ def detect_dominant_color(image):
 
 def detect_shape(image):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (5,5), 0)
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
     _, thresh = cv2.threshold(blurred, 60, 255, cv2.THRESH_BINARY)
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    contours, _ = cv2.findContours(
+        thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    )
+
     if len(contours) == 0:
         return "unknown"
+
     c = max(contours, key=cv2.contourArea)
     approx = cv2.approxPolyDP(c, 0.04 * cv2.arcLength(c, True), True)
     vertices = len(approx)
+
     if vertices == 3:
         return "triangle"
     elif vertices == 4:
@@ -164,38 +151,56 @@ def map_to_painting(color, shape):
 # -----------------------------
 # GEMINI RESPONSE WITH MEMORY
 # -----------------------------
+def build_history_text():
+    parts = [SYSTEM_PROMPT]
+    for item in history_data[-10:]:
+        role = item.get("role", "user")
+        text = item.get("text", "")
+        parts.append(f"{role.capitalize()}: {text}")
+    return "\n".join(parts)
+
 def get_ai_response(user_text, lang):
     prompt = f"""
+{build_history_text()}
+
 Visitor language: {lang}
 Respond in the SAME language.
 
 Visitor: {user_text}
 Guide:
 """
-    response = chat.send_message(prompt)
-    history_data.append({"role": "user", "parts": [user_text]})
-    history_data.append({"role": "model", "parts": [response.text]})
+
+    response = gemini_client.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=prompt
+    )
+
+    answer = response.text if response.text else "Sorry, I could not answer that."
+    history_data.append({"role": "user", "text": user_text})
+    history_data.append({"role": "model", "text": answer})
     save_memory(history_data)
-    return response.text
+    return answer
 
 # -----------------------------
 # OPENAI TTS
 # -----------------------------
 def speak(text):
     temp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-    with openai.audio.speech.with_streaming_response.create(
+    with client.audio.speech.with_streaming_response.create(
         model="gpt-4o-mini-tts",
         voice="alloy",
         input=text
     ) as response:
         response.stream_to_file(temp.name)
-    os.system(f"aplay {temp.name}")
+
+    os.system(f'aplay "{temp.name}"')
 
 # -----------------------------
 # MAIN LOOP
 # -----------------------------
 def main():
     print("🤖 Museum AI Guide Ready!\n")
+
     while True:
         try:
             # Step 1: Capture painting
@@ -211,12 +216,15 @@ def main():
             print(f"Detected Painting: {painting_title}")
 
             # Step 2: Explain painting
-            explanation = get_ai_response(f"Visitor is looking at {painting_title}. Explain briefly and ask if they want to know more.", "en")
+            explanation = get_ai_response(
+                f"Visitor is looking at {painting_title}. Explain briefly and ask if they want to know more.",
+                "en"
+            )
             print("🤖 Guide:", explanation)
             speak(explanation)
 
             # Step 3: Listen to visitor
-            audio_file = record_until_silence()
+            audio_file = record_audio_fixed()
             visitor_text = speech_to_text(audio_file)
             print("🧑 Visitor:", visitor_text)
 
@@ -226,18 +234,20 @@ def main():
 
             lang = detect_language(visitor_text)
 
-            # Step 4: Check for follow-up
-            if "yes" in visitor_text.lower() or "tell me more" in visitor_text.lower():
-                extra = get_ai_response(f"Visitor wants to know more about {painting_title}", lang)
-                print("🤖 Guide (extra):", extra)
-                speak(extra)
+            # Step 4: Continue conversation
+            reply = get_ai_response(visitor_text, lang)
+            print("🤖 Guide:", reply)
+            speak(reply)
 
         except KeyboardInterrupt:
             print("\nStopping...")
             break
         except Exception as e:
             print("Error:", e)
-            speak("Sorry, something went wrong.")
+            try:
+                speak("Sorry, something went wrong.")
+            except Exception:
+                pass
 
 if __name__ == "__main__":
     main()
