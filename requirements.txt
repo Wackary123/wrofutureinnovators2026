@@ -1,0 +1,8 @@
+opencv-python
+numpy
+sounddevice
+scipy
+openai
+google-generativeai
+langdetect
+webrtcvad
