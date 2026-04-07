@@ -1,18 +1,25 @@
 import os
-import sounddevice as sd
-import soundfile as sf
 from dotenv import load_dotenv
-import pyttsx3
 from openai import OpenAI
 from google import genai
+import pyttsx3
 
+# ========================
+# ⚙️ SETTINGS
+# ========================
+USE_MIC = False   # 🔴 change to True when you have a microphone
+
+# ========================
 # 🔑 LOAD KEYS
+# ========================
 load_dotenv()
 
 openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-# 🔊 TTS (offline)
+# ========================
+# 🔊 TEXT TO SPEECH
+# ========================
 engine = pyttsx3.init()
 
 def speak(text):
@@ -20,18 +27,24 @@ def speak(text):
     engine.say(text)
     engine.runAndWait()
 
-# 🎤 RECORD AUDIO
-def record_audio(filename="input.wav", duration=3):
-    fs = 16000
-    print("\n🎤 Listening...")
-    
-    audio = sd.rec(int(duration * fs), samplerate=fs, channels=1)
-    sd.wait()
+# ========================
+# 🎤 (OPTIONAL) MIC SETUP
+# ========================
+if USE_MIC:
+    import sounddevice as sd
+    import soundfile as sf
 
-    sf.write(filename, audio, fs)
-    print("✅ Recorded")
+    def record_audio(filename="input.wav", duration=3):
+        fs = 16000
+        print("\n🎤 Listening...")
+        audio = sd.rec(int(duration * fs), samplerate=fs, channels=1)
+        sd.wait()
+        sf.write(filename, audio, fs)
+        print("✅ Recorded")
 
-# 🧠 STT (Whisper → fallback Gemini)
+# ========================
+# 🧠 SPEECH TO TEXT
+# ========================
 def speech_to_text(filename="input.wav"):
     try:
         with open(filename, "rb") as f:
@@ -41,60 +54,57 @@ def speech_to_text(filename="input.wav"):
             )
         print("✅ Using Whisper")
         return result.text.lower()
+
     except Exception as e:
         print("⚠️ Whisper failed:", e)
-
-    try:
-        with open(filename, "rb") as f:
-            audio_bytes = f.read()
-
-        response = gemini_client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=[
-                {"role": "user", "parts": [
-                    {"text": "Transcribe this audio."},
-                    {"inline_data": {"mime_type": "audio/wav", "data": audio_bytes}}
-                ]}
-            ]
-        )
-
-        print("✅ Using Gemini STT")
-        return response.text.lower()
-    except Exception as e:
-        print("❌ STT failed:", e)
         return ""
 
+# ========================
 # 🤖 AI RESPONSE
+# ========================
 def ask_ai(text):
-    prompt = f"""
+    try:
+        prompt = f"""
 You are a cultural museum guide robot.
 
 User said: "{text}"
 
 Rules:
-- Respond in same language
+- Respond in SAME language
 - Keep it SHORT (1 sentence)
 - Be clear and educational
 """
-    response = gemini_client.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=prompt
-    )
-    return response.text
+        response = gemini_client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt
+        )
+        return response.text
 
+    except Exception as e:
+        print("❌ AI error:", e)
+        return "Sorry, I couldn't answer that."
+
+# ========================
 # 🚀 MAIN LOOP
+# ========================
 def main():
     print("🤖 Robot ready. Say 'hey guide'...")
 
     while True:
-        record_audio()
 
-        text = speech_to_text()
+        # 🟢 INPUT MODE
+        if USE_MIC:
+            record_audio()
+            text = speech_to_text()
+        else:
+            text = input("\nType something: ").lower()
+
         if not text:
             continue
 
         print("👂 Heard:", text)
 
+        # 🎯 WAKE WORD
         if "hey guide" not in text:
             continue
 
@@ -111,5 +121,6 @@ def main():
 
         speak(answer)
 
+# ▶️ RUN
 if __name__ == "__main__":
     main()
