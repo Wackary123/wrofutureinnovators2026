@@ -36,9 +36,7 @@ def load_env_file(env_path=".env"):
 
 load_env_file()
 
-# -----------------------------
 # CONFIG
-# -----------------------------
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "YOUR_OPENAI_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "YOUR_GOOGLE_API_KEY")
 
@@ -55,9 +53,7 @@ ENABLE_VOICE_INPUT = True
 ENABLE_VOICE_OUTPUT = True
 ENABLE_MEMORY = False
 
-# -----------------------------
 # LOAD / SAVE MEMORY
-# -----------------------------
 def load_memory():
     if not ENABLE_MEMORY:
         return []
@@ -74,9 +70,7 @@ def save_memory(history):
 
 history_data = load_memory()
 
-# -----------------------------
-# GEMINI SYSTEM PROMPT
-# -----------------------------
+# GEMINI SYSTEM PROMPT Template of how you want the ai to act
 SYSTEM_PROMPT = """
 You are an enthusiastic museum tour guide in a robotics and science museum.
 RULES:
@@ -87,11 +81,9 @@ RULES:
 - Use simple explanations for kids if needed
 """
 
-# -----------------------------
 # RECORD AUDIO (NO WEBRTCVAD)
-# -----------------------------
 def record_audio_fixed():
-    print("\n🎤 Listening...")
+    print("\n Listening...")
     audio = sd.rec(
         int(RECORD_SECONDS * SAMPLE_RATE),
         samplerate=SAMPLE_RATE,
@@ -104,9 +96,7 @@ def record_audio_fixed():
     write(temp.name, SAMPLE_RATE, audio)
     return temp.name
 
-# -----------------------------
 # SPEECH TO TEXT
-# -----------------------------
 def speech_to_text(audio_file):
     with open(audio_file, "rb") as f:
         result = client.audio.transcriptions.create(
@@ -121,9 +111,7 @@ def detect_language(text):
     except Exception:
         return "en"
 
-# -----------------------------
 # PAINTING RECOGNITION
-# -----------------------------
 painting_database = {
     "red_circle": "The Red Circle",
     "blue_square": "Blue Square Painting",
@@ -184,9 +172,7 @@ def map_to_painting(color, shape):
     key = f"{color}_{shape}"
     return painting_database.get(key, "Unknown Painting")
 
-# -----------------------------
 # GEMINI RESPONSE WITH MEMORY
-# -----------------------------
 def build_history_text():
     parts = [SYSTEM_PROMPT]
     if not ENABLE_MEMORY:
@@ -220,9 +206,7 @@ Guide:
         save_memory(history_data)
     return answer
 
-# -----------------------------
 # OPENAI TTS
-# -----------------------------
 def speak(text):
     if not ENABLE_VOICE_OUTPUT:
         return
@@ -237,9 +221,7 @@ def speak(text):
 
     os.system(f'aplay "{temp.name}"')
 
-# -----------------------------
 # MAIN LOOP
-# -----------------------------
 def main():
     print("🤖 Museum AI Guide Ready!\n")
 
