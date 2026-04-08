@@ -47,10 +47,10 @@ SAMPLE_RATE = 16000
 RECORD_SECONDS = 4
 MEMORY_FILE = "memory.json"
 
-ENABLE_CAMERA_DETECTION = False
+ENABLE_CAMERA_DETECTION = True
 ENABLE_PAINTING_INTRO = False
-ENABLE_VOICE_INPUT = True
-ENABLE_VOICE_OUTPUT = True
+ENABLE_VOICE_INPUT = False
+ENABLE_VOICE_OUTPUT = False
 ENABLE_MEMORY = False
 
 # LOAD / SAVE MEMORY
@@ -120,11 +120,25 @@ painting_database = {
 }
 
 def capture_image():
-    cap = cv2.VideoCapture(0)
-    ret, frame = cap.read()
-    cap.release()
-    if ret:
-        return frame
+    # try multiple backends
+    for backend in (cv2.CAP_ANY, cv2.CAP_DSHOW):
+        cap = cv2.VideoCapture(0, backend)
+        if not cap.isOpened():
+            cap.release()
+            continue
+        frame = None
+        ret = False
+        for _ in range(10):
+            ret, frame = cap.read()
+            if ret and frame is not None:
+                break
+            time.sleep(0.05)
+
+        cap.release()
+
+        if ret and frame is not None:
+            return frame
+
     return None
 
 def detect_dominant_color(image):
@@ -231,7 +245,7 @@ def main():
                 # Step 1: Capture painting
                 image = capture_image()
                 if image is None:
-                    print("Failed to capture image, retrying...")
+                    print("Failed to capture image. Check camera permissions and close other apps using the webcam.")
                     time.sleep(1)
                     continue
 
