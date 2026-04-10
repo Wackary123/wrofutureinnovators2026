@@ -1,0 +1,124 @@
+import os
+from dotenv import load_dotenv
+from google import genai
+from fusion_hat.stt import Vosk as STT
+from fusion_hat.tts import Espeak
+
+
+class MuseumHelmet:
+    def __init__(self):
+        load_dotenv()
+
+        # AI setup
+        self.gemini_api_key = os.getenv("GEMINI_API_KEY")
+        self.client = genai.Client(api_key=self.gemini_api_key)
+
+        # Speech-to-text / text-to-speech
+        self.stt = STT(language="en-us")
+        self.tts = Espeak()
+
+        # Voice settings
+        self.tts.set_amp(200)
+        self.tts.set_speed(150)
+        self.tts.set_gap(1)
+        self.tts.set_pitch(70)
+
+        # Wake word
+        self.wake_word = "hey guide"
+
+        # AI system prompt
+        self.system_prompt = """
+You are a museum cultural guide helmet with a secondary safety role.
+Rules:
+- Give clear, short, natural answers
+- Focus on culture, history, museums, traditions, and artifacts
+- If the user asks about safety or security, answer briefly and respectfully
+- Respect privacy and do not mention storing personal data
+- Keep answers easy to understand
+"""
+
+    def say(self, text):
+        print(f"🤖 {text}")
+        self.tts.say(text)
+
+    def listen_once(self):
+        print("🎤 Listening...")
+        final_text = ""
+
+        for result in self.stt.listen(stream=True):
+            if result["done"]:
+                final_text = result["final"].strip().lower()
+                print(f"\r\x1b[Kfinal: {final_text}")
+                return final_text
+            else:
+                partial = result["partial"].strip().lower()
+                print(f"\r\x1b[Kpartial: {partial}", end="", flush=True)
+
+        return final_text
+
+    def ask_ai(self, user_text):
+        prompt = f"""
+{self.system_prompt}
+
+User: {user_text}
+Assistant:
+"""
+        response = self.client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt
+        )
+        return response.text.strip() if response.text else "Sorry, I could not answer that."
+
+    def handle_command(self, text):
+        if text in ["goodbye", "good bye", "exit", "quit", "stop program"]:
+            self.say("Goodbye.")
+            return False
+
+        if text in ["stop", "be quiet", "silence"]:
+            self.say("Okay.")
+            return True
+
+        if self.wake_word in text:
+            cleaned = text.replace(self.wake_word, "").strip()
+
+            if cleaned == "":
+                self.say("Yes? What would you like to know?")
+                question = self.listen_once()
+
+                if question:
+                    answer = self.ask_ai(question)
+                    self.say(answer)
+                else:
+                    self.say("I did not hear a question.")
+            else:
+                answer = self.ask_ai(cleaned)
+                self.say(answer)
+
+            return True
+
+        return True
+
+    def start(self):
+        self.say("Museum helmet ready.")
+
+        running = True
+        while running:
+            try:
+                text = self.listen_once()
+
+                if not text:
+                    continue
+
+                running = self.handle_command(text)
+
+            except KeyboardInterrupt:
+                self.say("Shutting down.")
+                break
+            except Exception as e:
+                print("Error:", e)
+                self.say("Sorry, something went wrong.")
+
+
+if __name__ == "__main__":
+    helmet = MuseumHelmet()
+    helmet.start()
