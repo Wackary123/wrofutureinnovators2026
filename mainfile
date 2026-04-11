@@ -1,5 +1,7 @@
 import os
 import time
+import threading
+import queue
 from dotenv import load_dotenv
 from google import genai
 from fusion_hat.stt import Vosk as STT  # type: ignore
@@ -40,21 +42,17 @@ Your personality and speaking style:
 - Do not give long monologues unless the user clearly asks for a detailed explanation
 - Prefer short back-and-forth conversation over long speeches
 - Usually answer in 1 to 3 short sentences
-- After answering, often invite the user forward with a small follow-up such as:
-  - "Do you want the short version or more detail?"
-  - "Want me to explain what makes it important?"
-  - "Do you want history, symbolism, or a fun fact?"
+- After answering, sometimes invite the visitor forward with one small follow-up, not every time
 - Vary your wording so you do not sound repetitive or scripted
 
 Core behavior:
 - Give clear, short, natural answers
 - Keep answers easy to understand
 - Focus on culture, history, museums, traditions, artifacts, exhibits, symbolism, and historical context
-- Adapt to the user's tone, age, and level of knowledge
+- Adapt to the user's tone and level of knowledge
 - If the user sounds confused, simplify immediately
 - If the user asks a broad question, answer briefly first, then offer more detail
 - If the user asks about an object, explain what it is, why it matters, and one interesting detail when possible
-- If the user asks for directions or location in the museum, answer clearly and practically
 - If the user asks about safety or security, answer briefly, respectfully, and calmly
 
 Conversation rules:
@@ -71,7 +69,6 @@ Privacy and safety:
 - Respect privacy
 - Do not mention storing, saving, tracking, or remembering personal data
 - Do not sound surveillance-like
-- If a request involves safety, emergencies, suspicious situations, or security concerns, respond clearly, calmly, and responsibly
 - Keep the safety role secondary unless the user brings it up
 
 Always sound like a helpful museum guide beside the visitor, not an audio encyclopedia.
@@ -81,39 +78,70 @@ Always sound like a helpful museum guide beside the visitor, not an audio encycl
         print(f"🤖 {text}")
         self.tts.say(text)
 
+    def _stt_worker(self, result_queue, stop_event):
+        try:
+            for result in self.stt.listen(stream=True):
+                if stop_event.is_set():
+                    break
+                result_queue.put(result)
+                if result.get("done"):
+                    break
+        except Exception as e:
+            result_queue.put({"error": str(e)})
+
     def listen_once(self, silence_timeout=3):
         print("🎤 Listening...")
+
+        result_queue = queue.Queue()
+        stop_event = threading.Event()
+        worker = threading.Thread(
+            target=self._stt_worker,
+            args=(result_queue, stop_event),
+            daemon=True
+        )
+        worker.start()
+
         final_text = ""
         last_partial = ""
-        last_speech_time = time.time()
         heard_anything = False
+        last_speech_time = None
 
-        for result in self.stt.listen(stream=True):
-            now = time.time()
+        while True:
+            try:
+                result = result_queue.get(timeout=0.1)
+            except queue.Empty:
+                if heard_anything and last_speech_time is not None:
+                    if time.time() - last_speech_time >= silence_timeout:
+                        stop_event.set()
+                        print(f"\r\x1b[Kfinal (timeout): {last_partial}")
+                        return last_partial.strip().lower()
+                continue
 
-            if result["done"]:
-                final_text = result["final"].strip().lower()
+            if "error" in result:
+                raise RuntimeError(result["error"])
+
+            if result.get("done"):
+                final_text = result.get("final", "").strip().lower()
+                stop_event.set()
+
                 if final_text:
                     print(f"\r\x1b[Kfinal: {final_text}")
                     return final_text
 
-            partial = result.get("partial", "").strip().lower()
+                if last_partial:
+                    print(f"\r\x1b[Kfinal (fallback): {last_partial}")
+                    return last_partial.strip().lower()
 
+                return ""
+
+            partial = result.get("partial", "").strip().lower()
             if partial:
                 heard_anything = True
+                last_speech_time = time.time()
 
                 if partial != last_partial:
                     last_partial = partial
-                    last_speech_time = now
                     print(f"\r\x1b[Kpartial: {partial}", end="", flush=True)
-
-            # If speech started and then there is silence for N seconds,
-            # stop listening and use the last partial text.
-            if heard_anything and (now - last_speech_time >= silence_timeout):
-                print(f"\r\x1b[Kfinal (timeout): {last_partial}")
-                return last_partial
-
-        return final_text or last_partial
 
     def ask_ai(self, user_text):
         prompt = f"""
@@ -129,14 +157,17 @@ Keep it short unless the visitor asks for more.
             contents=prompt
         )
 
-        print("Gemini raw response:", response)
+        text = getattr(response, "text", None)
+        print("\n[Gemini text]:", text)
 
-        if hasattr(response, "text") and response.text:
-            return response.text.strip()
+        if text:
+            return text.strip()
 
         return "Sorry, I could not answer that."
 
     def handle_command(self, text):
+        print(f"\n[Heard]: {text}")
+
         if text in ["goodbye", "good bye", "exit", "quit", "stop program"]:
             self.say("Goodbye.")
             return False
@@ -182,9 +213,8 @@ Keep it short unless the visitor asks for more.
                 self.say("Shutting down.")
                 break
             except Exception as e:
-                print("Error:", e)
+                print("\nError:", e)
                 self.say("Sorry, something went wrong.")
-
 
 if __name__ == "__main__":
     helmet = MuseumHelmet()
