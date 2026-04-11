@@ -12,7 +12,7 @@ tts.set_gap(2)
 # Set pitch 0-99, default 80
 tts.set_pitch(99)
 
-tts.say("Hello! I’m Espeak TTS.")
+tts.say("HELLO! My name is Atlas, an AI chatbot here to help you")
 """
 
 from fusion_hat.tts import Pico2Wave
