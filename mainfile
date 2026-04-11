@@ -24,7 +24,7 @@ class MuseumHelmet:
         self.piper_model = "en_US-ryan-medium"
         self.piper_data_dir = os.path.expanduser("~/piper_voices")
 
-        # Wake word
+        # Wake words
         self.wake_words = ["atlas", "helmet", "guide", "assistant"]
 
         # Silence timeout in seconds
@@ -190,21 +190,6 @@ Keep it short unless the visitor asks for more.
 
         return "Sorry, I could not answer that."
 
-    def conversation_mode(self, first_question):
-        question = first_question
-
-        while True:
-            if question:
-                answer = self.ask_ai(question)
-                self.say(answer)
-
-            next_question = self.listen_once(silence_timeout=self.followup_timeout)
-
-            if not next_question:
-                break
-
-            question = next_question
-
     def handle_command(self, text):
         print(f"\n[Heard]: {text}")
 
@@ -216,22 +201,41 @@ Keep it short unless the visitor asks for more.
             self.say("Okay.")
             return True
 
+        matched_wake_word = None
         for wake_word in self.wake_words:
             if wake_word in text:
-                cleaned = text.replace(wake_word, "").strip()
+                matched_wake_word = wake_word
+                break
 
-                if cleaned == "":
-                    self.say("Yes? What would you like to know?")
-                    question = self.listen_once(silence_timeout=self.silence_timeout)
+        if matched_wake_word:
+            cleaned = text.replace(matched_wake_word, "").strip()
 
-                    if question:
-                        self.conversation_mode(question)
-                    else:
-                        self.say("I did not hear a question.")
+            if cleaned == "":
+                self.say("Yes? What would you like to know?")
+                question = self.listen_once(silence_timeout=self.silence_timeout)
+
+                if question:
+                    answer = self.ask_ai(question)
+                    self.say(answer)
+
+                    followup = self.listen_once(silence_timeout=self.followup_timeout)
+                    while followup:
+                        answer = self.ask_ai(followup)
+                        self.say(answer)
+                        followup = self.listen_once(silence_timeout=self.followup_timeout)
                 else:
-                    self.conversation_mode(cleaned)
+                    self.say("I did not hear a question.")
+            else:
+                answer = self.ask_ai(cleaned)
+                self.say(answer)
 
-                return True
+                followup = self.listen_once(silence_timeout=self.followup_timeout)
+                while followup:
+                    answer = self.ask_ai(followup)
+                    self.say(answer)
+                    followup = self.listen_once(silence_timeout=self.followup_timeout)
+
+            return True
 
         return True
 
@@ -254,6 +258,7 @@ Keep it short unless the visitor asks for more.
             except Exception as e:
                 print("\nError:", e)
                 self.say("Sorry, something went wrong.")
+
 
 if __name__ == "__main__":
     helmet = MuseumHelmet()
