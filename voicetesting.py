@@ -1,5 +1,5 @@
 
-from fusion_hat.tts import Espeak
+from fusion_hat.tts import Espeak  # type: ignore
 
 # Create Espeak TTS instance
 tts = Espeak()

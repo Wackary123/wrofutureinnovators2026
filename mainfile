@@ -25,7 +25,7 @@ class MuseumHelmet:
         self.piper_data_dir = os.path.expanduser("~/piper_voices")
 
         # Wake word
-        self.wake_words = ["atlas", "helmet", "guide", "assistant"]
+        self.wake_words = ["atlas", "hello helmet", "guide", "assistant"]
 
         # Silence timeout in seconds
         self.silence_timeout = 3
