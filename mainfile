@@ -24,7 +24,7 @@ class MuseumHelmet:
         self.tts.set_pitch(70)
 
         # Wake word
-        self.wake_word = "Atlas"
+        self.wake_word = "atlas"
 
         # AI system prompt
         self.system_prompt = """
