@@ -17,7 +17,7 @@ class MuseumHelmet:
         self.client = genai.Client(api_key=self.gemini_api_key)
 
         # Speech-to-text / text-to-speech
-        self.stt = STT(language="en-us")
+        self.stt = STT(language="en-us")#
         self.tts = Espeak()
 
         # Voice settings
