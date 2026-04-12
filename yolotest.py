@@ -11,7 +11,7 @@ picam2.configure("preview")
 picam2.start()
 
 # Load YOLOv8
-model = YOLO("yolov26n.pt")
+model = YOLO("yolo26n.pt")
 
 while True:
     # Capture a frame from the camera
