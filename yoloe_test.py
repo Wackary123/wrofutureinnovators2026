@@ -18,10 +18,10 @@ while True:
     frame = picam2.capture_array()
     
     # Run YOLOE model on the captured fram
-    results = model.predict(frame, imgsz=32)
+    results = model.predict(frame, imgsz=320)
     
     # Output the visual detection data
-    annotated_frame = results[0].plot(boxes=True, masks=False)
+    annotated_frame = results[0].plot(boxes=False, masks=True)
     
     # Get inference time
     inference_time = results[0].speed['inference']
