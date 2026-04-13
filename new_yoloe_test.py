@@ -1,6 +1,6 @@
 import cv2
-from picamera2 import Picamera2
-from ultralytics import YOLOE
+from picamera2 import Picamera2 # type: ignore
+from ultralytics import YOLOE #type: ignore
 
 # Set up the camera with Picam
 picam2 = Picamera2()
