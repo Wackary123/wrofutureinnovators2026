@@ -14,7 +14,7 @@ picam2.start()
 model = YOLOE("yoloe-11s-seg.pt")
 
 # Only detect these three prompts
-model.set_classes(["dog", "phone", "clock", "hoodie", "computer", "box", "plant", "tape", "mona lisa", "vase", "hair"])
+model.set_classes(["dog", "phone", "clock", "hoodie", "computer", "box", "plant", "tape", "mona lisa", "vase", "hair", "person","table","light","fruit"])
 
 while True:
     # Capture a frame from the camera
