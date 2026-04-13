@@ -18,7 +18,7 @@ while True:
     frame = picam2.capture_array()
     
     # Run YOLOE model on the captured fram
-    results = model.predict(frame, imgsz=224)
+    results = model.predict(frame, imgsz=32)
     
     # Output the visual detection data
     annotated_frame = results[0].plot(boxes=True, masks=False)
