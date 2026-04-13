@@ -11,7 +11,7 @@ picam2.configure("preview")
 picam2.start()
 
 # Load YOLOE prompt-free model
-model = YOLO("yoloe-11s-seg.pt")
+model = YOLO("yoloe-11s-seg-pf.pt")
 
 while True:
     # Capture a frame from the camera
