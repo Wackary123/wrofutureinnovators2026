@@ -1,8 +1,8 @@
-hello
+TODAY PRIOTITY:
 
+-finish the canva poster and PRINT IT (send it to emerson)
 
 things to do before the comp:
-
 
 - finish designing the helmet
 - finish printing the helmet
@@ -10,5 +10,4 @@ things to do before the comp:
 - finalize code(alex) (add claude ai and billing setup)
 - finish script for presentation
 - memorize your script
-- 
-- 
+- report add everything plus amke it 20 pages 
