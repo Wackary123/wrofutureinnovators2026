@@ -21,7 +21,7 @@ while True:
     results = model.predict(frame, imgsz=320)
     
     # Output the visual detection data
-    annotated_frame = results[0].plot(boxes=True, masks=True)
+    annotated_frame = results[0].plot(boxes=True, masks=False)
     
     # Get inference time
     inference_time = results[0].speed['inference']
