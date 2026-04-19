@@ -1,3 +1,6 @@
+PRIOTITY
+- finalize code(alex) (add claude ai and billing setup)
+
 TODAY PRIOTITY:
 
 -finish the canva poster and PRINT IT (send it to emerson)
