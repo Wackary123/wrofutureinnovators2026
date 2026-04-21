@@ -4,20 +4,21 @@ ATLAS — Museum Helmet main script.
 This version drops the Fusion HAT STT wrapper entirely and drives the
 MillSO MQ5 USB lavalier mic directly via sounddevice + vosk.
 
-Architecture (unchanged from previous version)
-----------------------------------------------
+Architecture
+------------
 Three background threads:
   1. Camera thread   — YOLOE every N frames, enqueues trigger events.
   2. Gemini worker   — drains request_queue, streams Gemini responses.
-  3. STT thread      — sounddevice -> vosk KaldiRecognizer.
+  3. STT thread      — sounddevice (48 kHz) -> decimate -> vosk (16 kHz).
 
 Main loop reads utterances, decides IDLE vs ACTIVE mode, and enqueues
 user-turn requests.
 
 Hardware
 --------
-Mic:     MillSO MQ5 USB lavalier on ALSA card 3 (see `arecord -l`).
-Speaker: YARCHONN 3.5mm (pending). Audio out currently uses ALSA default.
+Mic:     MillSO MQ5 USB lavalier on sounddevice index 1 (USB ENC Audio).
+         Records at 48 kHz natively, decimated to 16 kHz for Vosk.
+Speaker: USB speaker on ALSA card 4 (UACDemoV1.0), routed via plughw:4,0.
 """
 
 import json
@@ -54,14 +55,18 @@ vosk.SetLogLevel(-1)
 # Tunable constants.
 # --------------------------------------------------------------------------
 
-# --- Audio I/O ---
-# Mic: see `arecord -l`. Currently card 3 = USB ENC Audio Device (MillSO).
+# --- Audio input (mic) ---
+# Run `python3 -c "import sounddevice as sd; print(sd.query_devices())"` to
+# find the right index. Currently 1 = USB ENC Audio Device (MillSO mic).
 MIC_DEVICE = 1
-MIC_SAMPLE_RATE = 16000         # Vosk wants 16 kHz. plughw handles conversion.
-MIC_BLOCKSIZE = 4000            # frames per callback, ~0.25 s at 16 kHz
+MIC_NATIVE_RATE = 48000         # rate the USB mic actually records at
+MIC_SAMPLE_RATE = 16000         # what Vosk wants; we downsample to this
+MIC_BLOCKSIZE = 12000           # frames per callback at NATIVE rate (~0.25 s)
 
-# Speaker: None = ALSA default. Set when USB/3.5mm speaker arrives.
-AUDIO_OUT_DEVICE: str | None = None
+# --- Audio output (speaker) ---
+# Run `aplay -l` to find the right card. Currently card 4 = UACDemoV1.0 USB.
+# None lets ALSA pick the default (useful for debugging only).
+AUDIO_OUT_DEVICE: str | None = "plughw:4,0"
 
 # --- Vosk ---
 VOSK_MODEL_PATH = "/opt/vosk_models/vosk-model-small-en-us-0.15"
@@ -418,19 +423,33 @@ Guidelines:
             w.join(timeout=0.5)
 
     # --------------------------------------------------------------------
-    # STT: sounddevice -> Vosk KaldiRecognizer.
+    # STT: sounddevice (native rate) -> decimate -> Vosk (16 kHz).
     # --------------------------------------------------------------------
     def _listen_forever(self) -> None:
-        """Continuous capture from MIC_DEVICE, feed into Vosk, emit
-        utterances into self.utterance_queue as:
+        """Continuous capture from MIC_DEVICE at MIC_NATIVE_RATE, downsample
+        to MIC_SAMPLE_RATE, feed into Vosk. Emits utterances into
+        self.utterance_queue as:
             {"text": str, "conf": float|None, "duration": float}
         """
         audio_q: queue.Queue = queue.Queue()
 
+        # Integer decimation factor from native rate -> Vosk rate.
+        if MIC_NATIVE_RATE % MIC_SAMPLE_RATE != 0:
+            raise RuntimeError(
+                f"MIC_NATIVE_RATE ({MIC_NATIVE_RATE}) must be an integer "
+                f"multiple of MIC_SAMPLE_RATE ({MIC_SAMPLE_RATE})."
+            )
+        decim = MIC_NATIVE_RATE // MIC_SAMPLE_RATE
+
         def audio_callback(indata, frames, time_info, status):
             if status:
                 pass
-            audio_q.put(bytes(indata))
+            # indata is a CFFI buffer of int16 mono. Convert to numpy,
+            # decimate, then back to bytes for Vosk.
+            samples = np.frombuffer(bytes(indata), dtype=np.int16)
+            if decim > 1:
+                samples = samples[::decim]
+            audio_q.put(samples.tobytes())
 
         while not self.stop_event.is_set():
             try:
@@ -438,14 +457,15 @@ Guidelines:
                 recognizer.SetWords(True)
 
                 with sd.RawInputStream(
-                    samplerate=MIC_SAMPLE_RATE,
+                    samplerate=MIC_NATIVE_RATE,
                     blocksize=MIC_BLOCKSIZE,
                     dtype="int16",
                     channels=1,
                     device=MIC_DEVICE,
                     callback=audio_callback,
                 ):
-                    print(f"[STT] Listening on {MIC_DEVICE} @ {MIC_SAMPLE_RATE} Hz")
+                    print(f"[STT] Listening on device {MIC_DEVICE} "
+                          f"@ {MIC_NATIVE_RATE} Hz -> {MIC_SAMPLE_RATE} Hz for Vosk")
                     utt_start: float | None = None
 
                     while not self.stop_event.is_set():
