@@ -95,7 +95,7 @@ MEMORY_TURNS = 10
 DETECT_EVERY_N_FRAMES = 4
 OBJECT_HOLD_SECONDS = 2.0
 OBJECT_COOLDOWN_SECONDS = 8.0
-TRIGGER_OBJECTS = {"mona lisa", "vase"}
+TRIGGER_OBJECTS = {"mona lisa", "vase", "pharaoh", "van gogh", "crown"}
 
 # --- Greeting ---
 GREETING = (
@@ -124,7 +124,7 @@ class MuseumHelmet:
         self.camera_size = (800, 800)
         self.model_path = "yoloe-11s-seg.pt"
         self.prompt_names = [
-            "mona lisa", "computer", "person", "vase", "iphone", "head",
+            "mona lisa", "computer", "person", "vase", "iphone", "head","crown", "van gogh", "pharaoh"
         ]
         self.confidence_threshold = 0.20
         self.model_imgsz = 192
