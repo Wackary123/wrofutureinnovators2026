@@ -59,7 +59,7 @@ VOSK_MODEL_PATH = "/opt/vosk_models/vosk-model-small-en-us-0.15"
 # --- Piper voice / speed ---
 PIPER_VOICE = "en_US-ryan-low"
 PIPER_DATA_DIR = os.path.expanduser("~/piper_voices")
-PIPER_LENGTH_SCALE = 0.90
+PIPER_LENGTH_SCALE = 1.10
 
 # --- Noise gate ---
 STT_MIN_WORDS = 3
@@ -84,8 +84,8 @@ TRIGGER_OBJECTS = {"vase", "sword", "pharaoh mask", "mona lisa"}
 OBJECT_PRIORITY = {
     "pharaoh mask": 1,
     "mona lisa": 2,
-    "vase": 3,
-    "sword": 4,
+    "crown": 3,
+    "vase": 4,
 }
 DETECT_CONFIDENCE_THRESHOLD = 0.10
 TRIGGER_CONFIDENCE_THRESHOLD = 0.10
@@ -99,7 +99,7 @@ CAMERA_FLIP_180 = True
 GEMINI_MODEL_PRIMARY = "gemini-2.5-flash"
 GEMINI_MODEL_FALLBACK = "gemini-2.5-flash-lite"
 # Time to wait after hearing question before playing "let me think".
-ACK_DELAY_SECONDS = 1.5
+ACK_DELAY_SECONDS = 1
 # Acknowledgment phrases (pre-rendered). Random first-try choice.
 ACK_FIRST_TRY_PHRASES = [
     "Let me think.",
