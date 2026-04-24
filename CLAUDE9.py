@@ -90,7 +90,7 @@ MEMORY_TURNS = 10
 DETECT_EVERY_N_FRAMES = 4
 OBJECT_HOLD_SECONDS = 2.0
 OBJECT_COOLDOWN_SECONDS = 8.0
-TRIGGER_OBJECTS = {"mona lisa", "vase"}
+TRIGGER_OBJECTS = {"mona lisa painting", "vase", "sword"}
 
 # --- Greeting ---
 GREETING = (
@@ -116,10 +116,10 @@ class MuseumHelmet:
         print("[STT] Vosk model loaded.")
 
         # --- Camera / YOLOE ---
-        self.camera_size = (1280, 960)
+        self.camera_size = (1536, 864)
         self.model_path = "yoloe-11s-seg.pt"
         self.prompt_names = [
-            "mona lisa", "computer", "person", "vase", "iphone", "head",
+            "mona lisa painting","vase", "sword"
         ]
         self.confidence_threshold = 0.20
         self.model_imgsz = 192
@@ -543,6 +543,10 @@ This is NOT a bystander event — never reply SKIP for a camera event.
             picam2.configure("preview")
             picam2.start()
             time.sleep(0.2)
+            try:
+                picam2.set_controls({"ScalerCrop": (0,0,4608,2592)})
+            except Exception as e:
+                print(f"[Camera] Could not set ScalerCrop: {e}")
 
             preview_start = time.time()
             while time.time() - preview_start < 1.0 and not self.stop_event.is_set():
