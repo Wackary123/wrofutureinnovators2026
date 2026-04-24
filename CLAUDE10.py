@@ -41,42 +41,40 @@ vosk.SetLogLevel(-1)
 
 
 # --------------------------------------------------------------------------
-# Tunable constants.
-# --------------------------------------------------------------------------
+# constants
 
-# --- Audio input (mic) ---
 MIC_DEVICE = 1
 MIC_NATIVE_RATE = 48000
 MIC_SAMPLE_RATE = 16000
 MIC_BLOCKSIZE = 12000
 
-# --- Audio output (speaker) ---
+
 AUDIO_OUT_DEVICE: str | None = "plughw:4,0"
 
-# --- Vosk ---
+
 VOSK_MODEL_PATH = "/opt/vosk_models/vosk-model-small-en-us-0.15"
 
-# --- Piper voice / speed ---
+
 PIPER_VOICE = "en_US-ryan-low"
 PIPER_DATA_DIR = os.path.expanduser("~/piper_voices")
 PIPER_LENGTH_SCALE = 1.10
 
-# --- Noise gate ---
+
 STT_MIN_WORDS = 3
 STT_MIN_SECONDS = 1.0
 VOSK_MIN_CONF = 0.55
 
-# --- Self-hearing settle ---
+
 POST_SPEAK_SETTLE_SECONDS = 0.60
 
-# --- Keywords ---
+
 WAKE_WORDS = ("atlas", "helmet", "guide", "assistant")
 EXIT_WORDS = ("goodbye", "good bye", "exit", "quit", "stop program")
 
-# --- Memory ---
+
 MEMORY_TURNS = 10
 
-# --- Vision ---
+
 DETECT_EVERY_N_FRAMES = 4
 OBJECT_HOLD_SECONDS = 1.5
 OBJECT_COOLDOWN_SECONDS = 3.0
@@ -90,17 +88,17 @@ OBJECT_PRIORITY = {
 DETECT_CONFIDENCE_THRESHOLD = 0.10
 TRIGGER_CONFIDENCE_THRESHOLD = 0.10
 
-# --- Camera ---
+
 CAMERA_FULL_SENSOR = (0, 0, 4608, 2592)
 CAMERA_PREVIEW_SIZE = (1200, 1200)
 CAMERA_FLIP_180 = True
 
-# --- Gemini retry / acknowledgment ---
+
 GEMINI_MODEL_PRIMARY = "gemini-2.5-flash"
 GEMINI_MODEL_FALLBACK = "gemini-2.5-flash-lite"
-# Time to wait after hearing question before playing "let me think".
+
 ACK_DELAY_SECONDS = 1
-# Acknowledgment phrases (pre-rendered). Random first-try choice.
+
 ACK_FIRST_TRY_PHRASES = [
     "Hmmmm... let me think for a second please",
     "One moment please, let me think",
@@ -109,16 +107,15 @@ ACK_FIRST_TRY_PHRASES = [
 ACK_SECOND_TRY_PHRASE = "Sorry, one second, let me think."
 FAILURE_PHRASE = "There's a problem with the connection right now. Please try again in a moment."
 
-# --- Greeting ---
+
 GREETING = (
     "Hi, I'm your museum guide. You can ask me anything, or just stop in "
-    "front of an exhibit and I'll tell you about it."
+    "front of something and I'll tell you about it."
 )
 
 
 # --------------------------------------------------------------------------
-# Helpers.
-# --------------------------------------------------------------------------
+
 def _piper_synthesize(text: str, out_path: str) -> bool:
     """Blocking: run piper once and write a WAV. Returns True on success."""
     try:
@@ -144,18 +141,18 @@ class MuseumHelmet:
     def __init__(self):
         load_dotenv()
 
-        # --- AI setup ---
+        # --- api key setup ---
         self.gemini_api_key = os.getenv("GEMINI_API_KEY")
         self.client = genai.Client(api_key=self.gemini_api_key)
 
-        # --- Vosk STT ---
+        # --- voosk STT ---
         if not os.path.isdir(VOSK_MODEL_PATH):
             raise RuntimeError(f"Vosk model not found at {VOSK_MODEL_PATH}.")
         print(f"[STT] Loading Vosk model from {VOSK_MODEL_PATH} ...")
         self.vosk_model = vosk.Model(VOSK_MODEL_PATH)
         print("[STT] Vosk model loaded.")
 
-        # --- Camera / YOLOE ---
+        # --- camera / YOLOE ---
         self.camera_size = CAMERA_PREVIEW_SIZE
         self.model_path = "yoloe-11s-seg.pt"
         self.prompt_names = [
@@ -170,7 +167,7 @@ class MuseumHelmet:
         self.last_object_trigger_time = {name: 0.0 for name in self.prompt_names}
         self.last_terminal_objects = None
 
-        # --- Inter-thread state ---
+        # --- inter-thread state --- brain coordination controlation
         self.utterance_queue: queue.Queue = queue.Queue()
         self.request_queue: queue.Queue = queue.Queue()
 
@@ -195,7 +192,7 @@ class MuseumHelmet:
         self._failure_wav: str | None = None
         self._ack_tempdir = tempfile.mkdtemp(prefix="atlas_ack_")
 
-        # --- System prompt ---
+        # --- system prompt ---
         self.system_prompt = """
 You are an AI museum guide called Atlas embedded in a wearable helmet, speaking directly to a visitor in front of an exhibit. You also have a secondary, non-intrusive safety role as a security guard.
 Personality & Style
@@ -259,7 +256,7 @@ CRITICAL OUTPUT FORMAT RULES — these are read aloud by a text-to-speech engine
 """
 
     # --------------------------------------------------------------------
-    # Pre-render acknowledgment WAVs.
+    # pre-render acknowledgment WAVs (AI)
     # --------------------------------------------------------------------
     def _prepare_ack_wavs(self) -> None:
         print("[Piper] Pre-rendering acknowledgment audio...")
@@ -297,7 +294,7 @@ CRITICAL OUTPUT FORMAT RULES — these are read aloud by a text-to-speech engine
                 self._aplay_proc = None
 
     # --------------------------------------------------------------------
-    # Memory.
+    # Memory
     # --------------------------------------------------------------------
     def _memory_append(self, role: str, text: str) -> None:
         with self.memory_lock:
@@ -317,7 +314,7 @@ CRITICAL OUTPUT FORMAT RULES — these are read aloud by a text-to-speech engine
         return "\n".join(lines) if lines else "(no prior turns)"
 
     # --------------------------------------------------------------------
-    # TTS — one shot per response.
+    # TTS — one shot per response (piper doc)
     # --------------------------------------------------------------------
     def _sanitize_for_tts(self, text: str) -> str:
         if not text:
@@ -395,7 +392,7 @@ CRITICAL OUTPUT FORMAT RULES — these are read aloud by a text-to-speech engine
                         pass
 
     def say_blocking(self, text: str) -> None:
-        print(f"🤖 {text}")
+        print(f" {text}")
         self.is_busy_event.set()
         self.speak_start_time = time.time()
         try:
@@ -405,7 +402,7 @@ CRITICAL OUTPUT FORMAT RULES — these are read aloud by a text-to-speech engine
             self.last_speak_end_time = time.time()
 
     # --------------------------------------------------------------------
-    # Gemini with retry + fallback model.
+    # Gemini with retry + fallback model in case 503 error scenario (AI)
     # --------------------------------------------------------------------
     def _gemini_try_once(self, model: str, prompt: str) -> str:
         """One attempt. Returns response text, or raises on error."""
@@ -435,8 +432,8 @@ CRITICAL OUTPUT FORMAT RULES — these are read aloud by a text-to-speech engine
           - if second also fails: silently switch to fallback model and retry
           - if all three fail: play failure phrase
         """
-        # Phase 1: attempt primary. Launch in a thread so we can play ack
-        # after 1.5s if it hasn't returned.
+        # part 1: attempt primary. Launch in a thread so we can play ack
+        # after 1.5s if it hasn't returned"
         result_holder: dict = {}
 
         def attempt(model, key):
@@ -472,7 +469,7 @@ CRITICAL OUTPUT FORMAT RULES — these are read aloud by a text-to-speech engine
 
         # Phase 2: retry primary, with second-try acknowledgment.
         if ack_enabled and self._ack_second_try_wav:
-            print("🤖 [ack] sorry, one second, let me think")
+            print(" [ack] sorry, one second, let me think")
             self._play_cached_wav(self._ack_second_try_wav)
 
         try:
@@ -496,7 +493,7 @@ CRITICAL OUTPUT FORMAT RULES — these are read aloud by a text-to-speech engine
         return ("", "failed")
 
     # --------------------------------------------------------------------
-    # Prompts.
+    # Prompts (AI improved)
     # --------------------------------------------------------------------
     _skip_instructions = """
 Bystander filter:
@@ -549,7 +546,7 @@ This is NOT a bystander event — never reply SKIP for a camera event.
 """
 
     # --------------------------------------------------------------------
-    # Request handling.
+    # Request handling (sanitize and request sorting)
     # --------------------------------------------------------------------
     def _handle_request(self, kind: str, text: str) -> None:
         if kind == "user":
@@ -575,7 +572,7 @@ This is NOT a bystander event — never reply SKIP for a camera event.
 
         if status == "failed":
             if self._failure_wav:
-                print("🤖 [failure] connection problem")
+                print(" [failure] connection problem")
                 self._play_cached_wav(self._failure_wav)
             # Roll back the user memory entry since we never answered.
             if kind == "user":
@@ -603,7 +600,7 @@ This is NOT a bystander event — never reply SKIP for a camera event.
                 return
 
         sanitized = self._sanitize_for_tts(response)
-        print(f"🤖 {sanitized}")
+        print(f" {sanitized}")
         self.speak_start_time = time.time()
         try:
             self._speak_full(sanitized)
@@ -622,7 +619,7 @@ This is NOT a bystander event — never reply SKIP for a camera event.
             self._handle_request(req.get("kind"), req.get("text", ""))
 
     # --------------------------------------------------------------------
-    # STT.
+    # STT ( AI n vosk documentation )
     # --------------------------------------------------------------------
     def _listen_forever(self) -> None:
         audio_q: queue.Queue = queue.Queue()
@@ -718,7 +715,7 @@ This is NOT a bystander event — never reply SKIP for a camera event.
         return sum(confs) / len(confs)
 
     # --------------------------------------------------------------------
-    # Camera worker.
+    # Camera worker (pi documentation)
     # --------------------------------------------------------------------
     def camera_worker(self) -> None:
         picam2 = None
@@ -859,7 +856,7 @@ This is NOT a bystander event — never reply SKIP for a camera event.
             self.object_first_seen_time = current_time
 
     # --------------------------------------------------------------------
-    # Utterance classification.
+    # Utterance classification (AI)
     # --------------------------------------------------------------------
     def _contains_wake_word(self, text: str) -> str | None:
         for w in WAKE_WORDS:
@@ -891,7 +888,7 @@ This is NOT a bystander event — never reply SKIP for a camera event.
         return out.strip()
 
     # --------------------------------------------------------------------
-    # Main loop.
+    # Main loop (brain)
     # --------------------------------------------------------------------
     def start(self) -> None:
         # Pre-render acknowledgments before anything else.
@@ -938,6 +935,13 @@ This is NOT a bystander event — never reply SKIP for a camera event.
             self.stop_event.set()
             self._hard_stop_all_audio()
 
+
+
+
+
+
+#  ------------------------------------------------------
+#  main program starter
 
 if __name__ == "__main__":
     helmet = MuseumHelmet()
