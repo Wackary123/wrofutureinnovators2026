@@ -1,17 +1,6 @@
 """
 ATLAS — Museum Helmet main script.
 
-This version:
-- "Let me think" acknowledgment ~1.5s after hearing a question if Gemini
-  hasn't replied yet. Second-try uses a softer wording. Third failure
-  falls back to gemini-2.5-flash-lite. Final failure apologizes cleanly.
-- Acknowledgment WAVs are pre-rendered at startup and replayed instantly
-  so the user hears something within ~200ms.
-- System prompt loosened: Gemini now answers any reasonable educational
-  or cultural question, not just about the current exhibit.
-- Camera triggers don't get "let me think" — they go straight to speech.
-- No interrupts (queued behavior during playback).
-
 Hardware
 --------
 Mic:     MillSO MQ5 USB lavalier on sounddevice index 1.
@@ -91,9 +80,15 @@ MEMORY_TURNS = 10
 DETECT_EVERY_N_FRAMES = 4
 OBJECT_HOLD_SECONDS = 2.0
 OBJECT_COOLDOWN_SECONDS = 8.0
-TRIGGER_OBJECTS = { "vase", "sword"}
-DETECT_CONFIDENCE_THRESHOLD = 0.50
-TRIGGER_CONFIDENCE_THRESHOLD = 0.50
+TRIGGER_OBJECTS = {"vase", "sword", "pharaoh mask", "mona lisa"}
+OBJECT_PRIORITY = {
+    "pharaoh mask": 1,
+    "mona lisa": 2,
+    "vase": 3,
+    "sword": 4,
+}
+DETECT_CONFIDENCE_THRESHOLD = 0.10
+TRIGGER_CONFIDENCE_THRESHOLD = 0.10
 
 # --- Camera ---
 CAMERA_FULL_SENSOR = (0, 0, 4608, 2592)
@@ -202,9 +197,9 @@ class MuseumHelmet:
 
         # --- System prompt ---
         self.system_prompt = """
-You are an AI museum guide embedded in a wearable helmet, speaking directly to a visitor in front of an exhibit. You also have a secondary, non-intrusive safety role.
-
+You are an AI museum guide called Atlas embedded in a wearable helmet, speaking directly to a visitor in front of an exhibit. You also have a secondary, non-intrusive safety role as a security guard.
 Personality & Style
+Your name is Atlas , an AI cultural and educational guide.
 Speak like a real human guide: warm, natural, and conversational.
 Avoid sounding robotic, scripted, or like a textbook.
 Keep responses concise: usually 1–2 short sentences, 3 only if clarity really needs it.
@@ -212,7 +207,7 @@ Prefer short back-and-forth interaction over long explanations.
 Adjust energy depending on the subject.
 
 What you will answer
-You are an educational and cultural guide first. ANSWER any reasonable question about:
+You are an educational and cultural guide first called Atlas. ANSWER any reasonable question about:
 art, history, culture, artifacts, artworks, artists, architecture, literature, mythology,
 religion, science, nature, geography, historical events, historical figures, museums, and
 general knowledge that an educated museum guide would know. This is true whether or not
@@ -257,7 +252,7 @@ CRITICAL OUTPUT FORMAT RULES — these are read aloud by a text-to-speech engine
 - Do NOT use bold, italics, or any emphasis markers.
 - Do NOT use bullet points, numbered lists, or dashes for lists.
 - Do NOT use headers, titles, or section labels.
-- Do NOT use emoji.
+- Do NOT use emojis
 - Write ONLY plain spoken prose — continuous sentences, like a person talking.
 - Every character you write will be spoken out loud, so anything that isn't
   a natural spoken word will sound wrong.
@@ -834,7 +829,13 @@ This is NOT a bystander event — never reply SKIP for a camera event.
             self.object_first_seen_time = None
             return
 
-        dominant = max(triggerable, key=lambda d: d["confidence"])
+        dominant = sorted(
+            triggerable,
+            key=lambda d: (
+                OBJECT_PRIORITY.get(d["name"], 999),
+            -d["confidence"]
+            )
+        )[0]
         dominant_name = dominant["name"]
 
         if dominant_name != self.last_seen_object:
