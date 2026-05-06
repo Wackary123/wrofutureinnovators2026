@@ -24,7 +24,7 @@ Behavior summary:
 import json
 import os
 import re
-import time
+import timef
 import random
 import threading
 import queue
@@ -79,7 +79,7 @@ EXIT_WORDS = ("goodbye", "good bye", "exit", "quit", "stop program")
 MEMORY_TURNS = 10
 
 # --- Vision ---
-DETECT_EVERY_N_FRAMES = 2
+DETECT_EVERY_N_FRAMES = 1
 OBJECT_HOLD_SECONDS = 2.0
 OBJECT_COOLDOWN_SECONDS = 8.0
 TRIGGER_OBJECTS = {"mona lisa painting", "vase", "sword", "pharaoh mask"}
@@ -100,10 +100,14 @@ TRIGGER_CONFIDENCE_THRESHOLD = 0.50
 #   6 = vertical flip
 #   7 = upper-left diagonal
 CAMERA_FLIP = 2
-CAMERA_GST_WIDTH = 1536
-CAMERA_GST_HEIGHT = 864
+CAMERA_GST_WIDTH = 4608
+CAMERA_GST_HEIGHT = 2592
+CAMERA_GST_FRAMERATE = 14
+CAMERA_GST_SENSOR_MODE = 0
 CAMERA_PROCESS_SIZE = (1024, 1024)  # what YOLOE actually sees (after resize)
 YOLOE_IMGSZ = 320
+
+SATURATION_BOOST = 1.6
 
 # --- Gemini ---
 GEMINI_MODEL_PRIMARY = "gemini-2.5-flash"
@@ -148,12 +152,18 @@ def _piper_synthesize(text: str, out_path: str) -> bool:
 
 
 def _build_camera_pipeline() -> str:
-    """Build the GStreamer pipeline string for the IMX708 via Argus."""
+    """Build the GStreamer pipeline string for the IMX708 via Argus.
+
+    Locked to sensor-mode 0 (full 4608x2592 sensor) because the
+    cropped/binned modes have broken ISP tuning on the IMX708 Jetson driver.
+    nvvidconv downscales on GPU before handing frames to OpenCV.
+    """
     return (
-        f"nvarguscamerasrc sensor-id=0 ! "
-        f"video/x-raw(memory:NVMM),width={CAMERA_GST_WIDTH},height={CAMERA_GST_HEIGHT},framerate=30/1 ! "
+        f"nvarguscamerasrc sensor-id=0 sensor-mode={CAMERA_GST_SENSOR_MODE} "
+        f"wbmode=1 aelock=false ee-mode=1 tnr-mode=1 ! "
+        f"video/x-raw(memory:NVMM),width={CAMERA_GST_WIDTH},height={CAMERA_GST_HEIGHT},framerate={CAMERA_GST_FRAMERATE}/1 ! "
         f"nvvidconv flip-method={CAMERA_FLIP} ! "
-        f"video/x-raw,format=BGRx ! "
+        f"video/x-raw,width=1280,height=720,format=BGRx ! "
         f"videoconvert ! "
         f"video/x-raw,format=BGR ! "
         f"appsink drop=true max-buffers=2"
@@ -737,13 +747,19 @@ This is NOT a bystander event — never reply SKIP for a camera event.
             last_fps = 0.0
 
             while not self.stop_event.is_set():
-                ret, frame = cap.read()
-                if not ret:
-                    time.sleep(0.01)
-                    continue
+              ret, frame = cap.read()
+            if not ret:
+                time.sleep(0.01)
+                continue
 
-                # Resize once for inference + display.
-                frame = cv2.resize(frame, CAMERA_PROCESS_SIZE)
+            # Resize once for inference + display.
+            frame = cv2.resize(frame, CAMERA_PROCESS_SIZE)
+
+    # IMX708 driver delivers desaturated colors; boost in HSV.
+            if SATURATION_BOOST != 1.0:
+                hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV).astype(np.float32)
+                hsv[..., 1] = np.clip(hsv[..., 1] * SATURATION_BOOST, 0, 255)
+                frame = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
 
                 frame_idx += 1
                 if frame_idx % DETECT_EVERY_N_FRAMES == 0:
