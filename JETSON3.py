@@ -565,9 +565,7 @@ Keep it to 1 to 2 short sentences.
 
             ret, frame = cap.read()
             if not ret:
-                continue
-
-            frame = cv2.cvtColor(frame, cv2.COLOR_BAYER_RG2BGR)
+                raise RuntimeError("Camera opened but could not read frames.")
 
             print(f"[Camera] First frame shape: {frame.shape}")
             print("[Camera] Loading YOLOE model...")
@@ -642,7 +640,7 @@ Keep it to 1 to 2 short sentences.
 
                 if cv2.waitKey(1) == ord("q"):
                    self.stop_event.set()
-                   break
+                       break
 
         except Exception as e:
             print("Camera worker error:", e)
