@@ -553,105 +553,95 @@ Keep it to 1 to 2 short sentences.
         return sum(confs) / len(confs)
 
     def camera_worker(self) -> None:
-        cap = None
+    cap = None
 
-        try:
-            cap = cv2.VideoCapture(CAMERA_DEVICE, cv2.CAP_V4L2)
+    try:
+        cap = cv2.VideoCapture(CAMERA_DEVICE, cv2.CAP_V4L2)
 
-            if not cap.isOpened():
-                raise RuntimeError(f"Camera failed to open at {CAMERA_DEVICE}")
+        if not cap.isOpened():
+            raise RuntimeError(f"Camera failed to open at {CAMERA_DEVICE}")
 
-            print("[Camera] OpenCV camera opened.")
+        print("[Camera] OpenCV camera opened.")
 
+        ret, frame = cap.read()
+        if not ret:
+            raise RuntimeError("Camera opened but could not read frames.")
+
+        print(f"[Camera] First frame shape: {frame.shape}")
+        print("[Camera] Loading YOLOE model...")
+
+        model = YOLOE(self.model_path)
+        model.set_classes(self.prompt_names)
+
+        print("[Camera] YOLOE model loaded.")
+
+        frame_idx = 0
+        last_annotated = None
+        last_fps = 0.0
+
+        while not self.stop_event.is_set():
             ret, frame = cap.read()
+
             if not ret:
                 continue
 
-            frame = cv2.cvtColor(frame, cv2.COLOR_BAYER_RG2BGR)
+            if CAMERA_FLIP_180:
+                frame = cv2.rotate(frame, cv2.ROTATE_180)
 
-            print(f"[Camera] First frame shape: {frame.shape}")
-            print("[Camera] Loading YOLOE model...")
+            # Fix green/weird camera preview if needed
+            try:
+                if len(frame.shape) == 2:
+                    frame = cv2.cvtColor(frame, cv2.COLOR_BAYER_RGGB2BGR)
+                else:
+                    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            except Exception:
+                pass
 
-            model = YOLOE(self.model_path)
-            model.set_classes(self.prompt_names)
+            frame = cv2.resize(frame, CAMERA_PROCESS_SIZE)
 
-            print("[Camera] YOLOE model loaded.")
+            frame_idx += 1
 
-            frame_idx = 0
-            last_annotated = None
-            last_fps = 0.0
+            if frame_idx % DETECT_EVERY_N_FRAMES == 0:
+                results = model.predict(frame, imgsz=self.model_imgsz, verbose=False)
+                result = results[0]
 
-            while not self.stop_event.is_set():
-                ret, frame = cap.read()
+                last_annotated = result.plot(boxes=True, masks=False)
 
-                if not ret:
-                    continue
+                detections = []
+                boxes = result.boxes
 
-                if CAMERA_FLIP_180:
-                    frame = cv2.rotate(frame, cv2.ROTATE_180)
+                if boxes is not None and boxes.cls is not None and boxes.conf is not None:
+                    for cls_id, conf in zip(boxes.cls.tolist(), boxes.conf.tolist()):
+                        if conf < self.detect_confidence_threshold:
+                            continue
 
-                frame = cv2.resize(frame, CAMERA_PROCESS_SIZE)
+                        cls_index = int(cls_id)
+                        name = result.names.get(cls_index, str(cls_index))
 
-                frame_idx += 1
+                        detections.append({
+                            "name": str(name).lower(),
+                            "confidence": float(conf),
+                        })
 
-                if frame_idx % DETECT_EVERY_N_FRAMES == 0:
-                    results = model.predict(frame, imgsz=self.model_imgsz, verbose=False)
-                    result = results[0]
+                inference_time = result.speed.get("inference", 0.0)
+                last_fps = 1000.0 / inference_time if inference_time > 0 else 0.0
 
-                    last_annotated = result.plot(boxes=True, masks=False)
+                self._maybe_trigger_object_explanation(detections)
 
-                    detections: list[dict] = []
-                    boxes = result.boxes
+            display = last_annotated if last_annotated is not None else frame
 
-                    if boxes is not None and boxes.cls is not None and boxes.conf is not None:
-                        class_ids = boxes.cls.tolist()
-                        confidences = boxes.conf.tolist()
+            cv2.imwrite("/tmp/latest_frame.jpg", display)
 
-                        for cls_id, conf in zip(class_ids, confidences):
-                            if conf < self.detect_confidence_threshold:
-                                continue
+        print("[Camera] worker stopped.")
 
-                            cls_index = int(cls_id)
-                            name = result.names.get(cls_index, str(cls_index))
+    except Exception as e:
+        print("Camera worker error:", e)
 
-                            detections.append({
-                                "name": str(name).lower(),
-                                "confidence": float(conf),
-                            })
+    finally:
+        if cap is not None:
+            cap.release()
 
-                    inference_time = result.speed.get("inference", 0.0)
-                    last_fps = 1000.0 / inference_time if inference_time > 0 else 0.0
-
-                    self._maybe_trigger_object_explanation(detections)
-
-                display = last_annotated if last_annotated is not None else frame
-
-                text = f"FPS infer: {last_fps:.1f}"
-                cv2.putText(
-                    display,
-                    text,
-                    (10, 35),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    1,
-                    (255, 255, 255),
-                    2,
-                    cv2.LINE_AA,
-                )
-
-                cv2.imshow("YOLOE Museum Helmet", display)
-
-                if cv2.waitKey(1) == ord("q"):
-                   self.stop_event.set()
-                   break
-
-        except Exception as e:
-            print("Camera worker error:", e)
-
-        finally:
-            if cap is not None:
-                cap.release()
-
-            cv2.destroyAllWindows()
+        cv2.destroyAllWindows()
 
     def _maybe_trigger_object_explanation(self, detections: list[dict]) -> None:
         current_time = time.time()
