@@ -512,7 +512,7 @@ Give a short natural museum-guide explanation. Do not mention detection. Keep it
                 if len(frame.shape) == 2:
                     try:
                         raw = frame[:, :, 0] if len(frame.shape) == 3 else frame
-                        frame = cv2.cvtColor(raw, cv2.COLOR_BAYER_RGGB2BGR)
+                        frame = cv2.cvtColor(raw, cv2.COLOR_BAYER_BGGR2BGR)
                     except Exception:
                         print("[Camera] Bayer convert failed:", e)
 
