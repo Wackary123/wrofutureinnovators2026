@@ -565,7 +565,9 @@ Keep it to 1 to 2 short sentences.
 
             ret, frame = cap.read()
             if not ret:
-                raise RuntimeError("Camera opened but could not read frames.")
+                continue
+
+            frame = cv2.cvtColor(frame, cv2.COLOR_BAYER_RG2BGR)
 
             print(f"[Camera] First frame shape: {frame.shape}")
             print("[Camera] Loading YOLOE model...")
