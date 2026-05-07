@@ -74,16 +74,16 @@ LANGUAGES: dict[str, dict] = {
         "piper_voice": "en_US-ryan-low",
         "switch_phrases": [
             # English commands (most reliable when in English mode)
-            "switch to english", "speak english", "english please", "in english",
+            "switch to english", "speak english", "english please", "in english","switched to english", "1 1", "one one"
             # French phrases for switching TO English (if French is active)
             "passez a l anglais", "passe a l anglais", "passe en anglais",
-            "passez en anglais", "parle anglais", "en anglais",
+            "passez en anglais", "parle anglais", "en anglais", " 2 1", "deux un"
             # Spanish phrases for switching TO English (if Spanish is active)
             "cambia al ingles", "cambiar al ingles", "habla ingles",
-            "en ingles", "ingles por favor",
+            "en ingles", "ingles por favor", " 3 1", "tres uno"
         ],
         "exit_phrases": [
-            "goodbye", "good bye", "exit", "quit", "stop program", "see you",
+            "goodbye", "good bye", "exit", "quit", "stop program", "see you", " 4 4", "four four"
         ],
         "ack_first": [
             "Let me think.",
