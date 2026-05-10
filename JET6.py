@@ -73,10 +73,10 @@ ACK_CACHE_DIR = os.path.expanduser("~/.atlas_ack_cache")
 EV3_MAC = "2C:6B:7D:7B:AE:02"
 # Maps YOLO class names -> motor slot names (must match ev3_motors.py).
 YOLO_TO_SLOT = {
-    "mona lisa painting": "slot_1",
-    "vase":               "slot_2",
-    "sword":              "slot_3",
-    "pharaoh mask":       "slot_4",
+    "mona_lisa": "slot_1",
+    "starry_night":               "slot_2",
+    "pharaoh_mask":              "slot_3",
+    "vase":       "slot_4",
 }
 # Lower all pictures this many seconds after Atlas finishes speaking.
 MOTOR_LOWER_DELAY_SECONDS = 5.0
